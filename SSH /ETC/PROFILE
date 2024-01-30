@@ -1,0 +1,7 @@
+if [ -n "$SSH_CLIENT" ]; then
+
+NTFY="${USER}@$(hostname -f) from $(echo $SSH_CLIENT|awk '{print $1}')"
+
+curl -u :TOKENHERE -s -H "Title: SSH Login" -d "$NTFY" https://ADDRESSHERE/TOPIC > /dev/null
+
+fi
