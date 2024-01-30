@@ -1,0 +1,11 @@
+sudo docker run -d \
+--name=ntfy \
+-v /home/tazsamir/docker/ntfy/cache:/var/cache/ntfy \
+-v /home/tazsamir/docker/ntfy/config:/etc/ntfy \
+-v /home/tazsamir/docker/ntfy/db:/var/lib/ntfy \
+-e TZ=Europe/London \
+-p 84:80 \
+-itd \
+binwiederhier/ntfy \
+serve \
+--cache-file /var/cache/ntfy/cache.db
