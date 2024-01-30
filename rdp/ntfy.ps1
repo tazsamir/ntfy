@@ -1,13 +1,6 @@
 # Define ntfy server details
-$ntfyURI = "YOUR SERVER ADDRESS HERE"
+$ntfyURI = "HTTPS://YOURSERVERADDRES/TOPICHERE"
 $ntfyToken = "YOUR TOKEN HERE"
-#I worked on this longer than expected
-
-# Initialize variables to store previous login information
-$previousLogonUser = $null
-$previousIpAddress = $null
-$previousWorkstation = $null
-$previousLogonProcess = $null
 
 # Function to send message to ntfy server
 function Send-NtfyMessage {
@@ -29,52 +22,50 @@ function Send-NtfyMessage {
     }
 }
 
-# Calculate the time 30 minutes ago
-$StartTime = (Get-Date).AddMinutes(-300)
-
-# Event log filter for RDP logon events within the last 30 minutes
-$Filter = @{
-    LogName = 'Security'
-    Id = 4624  # Logon success event ID
-    StartTime = $StartTime
+# Function to check if port 3389 is connected
+function Check-Port3389Connection {
+    $Port3389Connection = netstat -an | Select-String ":3389"
+    if ($Port3389Connection) {
+        return $true
+    } else {
+        return $false
+    }
 }
 
-# Start monitoring event log
-Get-WinEvent -FilterHashtable $Filter | ForEach-Object {
-    $Event = $_
-    $Properties = $Event.Properties
-
-    # Check if the logon type corresponds to a remote desktop logon (Type 10)
-    $LogonType = $Properties[8].Value  # Logon Type
-    if ($LogonType -ne 10) {
-        return  # Skip if not a remote desktop logon
+# Function to monitor the latest Event ID 25 or Event ID 4624 and check port 3389 connection
+function Monitor-LatestLogonAndPort3389 {
+    # Check for the latest Event ID 25
+    $Event25 = Get-WinEvent -LogName "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational" -FilterXPath "*[System[(EventID=25)]]" -MaxEvents 1
+    if ($Event25) {
+        $User25 = $Event25.Properties.Value[4]
+        $IPAddress25 = $Event25.Properties.Value[5]
+        $DateTime25 = $Event25.TimeCreated
+        $Message = "Latest Event ID 25 - Date and Time: $($DateTime25.ToUniversalTime().ToString('dd-MM-yyyy HH:mm:ss')), User: $User25, IP Address: $IPAddress25 "
     }
 
-    # Extract user, IP address, workstation name, and logon process name from event properties
-    $LogonUser = $Properties[5].Value  # Account Name
-    $IpAddress = $Properties[18].Value  # Source Network Address
-    $Workstation = $Properties[13].Value  # Workstation Name
-    $LogonProcess = $Properties[10].Value  # Logon Process Name
-
-    # Check if the current login information is the same as the previous one
-    if ($LogonUser -eq $previousLogonUser -and $IpAddress -eq $previousIpAddress -and $Workstation -eq $previousWorkstation -and $LogonProcess -eq $previousLogonProcess) {
-        return  # Skip if the current login is the same as the previous one
+    # Check for the latest Event ID 4624 with logon type 7 or 10
+    $Event4624 = Get-WinEvent -LogName "Security" -FilterXPath "*[System[(EventID=4624)]]" | Where-Object { $_.Properties[8].Value -in @(7, 10) } | Sort-Object TimeCreated -Descending | Select-Object -First 1
+    if ($Event4624) {
+        $User4624 = $Event4624.Properties[5].Value
+        $IPAddress4624 = $Event4624.Properties[18].Value
+        $DateTime4624 = $Event4624.TimeCreated
+        $LogonType4624 = $Event4624.Properties[8].Value
+        $Message = "Latest Event ID 4624 - Date and Time: $($DateTime4624.ToUniversalTime().ToString('dd-MM-yyyy HH:mm:ss')), User: $User4624, IP Address: $IPAddress4624, Logon Type: $LogonType4624 "
     }
 
-    # Format the message
-    if ($LogonUser -and $IpAddress -and $Workstation -and $LogonProcess) {
-        $Message = "RDP login - User: $LogonUser, IP Address: $IpAddress, Workstation: $Workstation, Logon Process: $LogonProcess"
-    }
-    else {
-        $Message = "RDP login - User, IP Address, Workstation, or Logon Process information not available"
+    # Check if port 3389 is connected
+    $Port3389Status = Check-Port3389Connection
+    if ($Port3389Status) {
+        $Message += "Port 3389 is connected."
     }
 
-    # Send message to ntfy server
-    Send-NtfyMessage -Message $Message
-
-    # Update previous login information
-    $previousLogonUser = $LogonUser
-    $previousIpAddress = $IpAddress
-    $previousWorkstation = $Workstation
-    $previousLogonProcess = $LogonProcess
+    # Send message to ntfy server if there is a message to send
+    if ($Message) {
+        Send-NtfyMessage -Message $Message
+    } else {
+        Send-NtfyMessage -Message "No recent login events found."
+    }
 }
+
+# Monitor the latest Event ID 25 or Event ID 4624 and port 3389 connection
+Monitor-LatestLogonAndPort3389
